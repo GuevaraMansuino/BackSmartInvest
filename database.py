@@ -16,10 +16,24 @@ def _build_database_url() -> str:
 
     return settings.DATABASE_URL
 
+import socket
+from urllib.parse import urlparse
+
+def get_connect_args(url: str) -> dict:
+    parsed = urlparse(url)
+    if parsed.hostname:
+        try:
+            # Force IPv4 resolution to bypass IPv6 Network Unreachable errors
+            ipv4_addr = socket.gethostbyname(parsed.hostname)
+            return {"hostaddr": ipv4_addr}
+        except Exception:
+            pass
+    return {}
 
 engine = create_engine(
     _build_database_url(),
     pool_pre_ping=True,
+    connect_args=get_connect_args(settings.DATABASE_URL),
 )
 
 SessionLocal = sessionmaker(
