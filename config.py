@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     APP_TIMEZONE: str = "America/Buenos_Aires"
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    CRON_SECRET: str = ""
     JWT_SECRET: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

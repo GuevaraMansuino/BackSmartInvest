@@ -24,6 +24,7 @@ class Profile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
+        onupdate=func.now(),
         nullable=False,
     )
 
@@ -132,16 +133,17 @@ class Transaction(Base):
         ForeignKey("portfolios.id", ondelete="CASCADE"),
         nullable=False,
     )
-    asset_id: Mapped[UUID] = mapped_column(
+    asset_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("assets.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
-    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
-    price: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 8), nullable=True)
     date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -149,7 +151,8 @@ class Transaction(Base):
     )
 
     portfolio: Mapped[Portfolio] = relationship(back_populates="transactions")
-    asset: Mapped[Asset] = relationship(back_populates="transactions")
+    asset: Mapped[Asset | None] = relationship(back_populates="transactions")
+
 
 
 class SystemLog(Base):

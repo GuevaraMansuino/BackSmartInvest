@@ -1,3 +1,3 @@
-from routes import auth, notifications, portfolio
+from routes import auth, market, notifications, portfolio
 
-__all__ = ["auth", "notifications", "portfolio"]
+__all__ = ["auth", "market", "notifications", "portfolio"]
