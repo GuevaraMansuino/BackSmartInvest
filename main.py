@@ -120,8 +120,23 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
 
 
 # ─────────────────────────────────────────
-# Health check
+# Root & Health check
 # ─────────────────────────────────────────
+@app.get("/", tags=["root"])
+async def root() -> dict:
+    """
+    Endpoint raíz de la API.
+    """
+    return {
+        "service": "Inversiones Inteligentes API",
+        "status": "online",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "health": "/health",
+        "keep_alive": "/api/cron/keep-alive",
+    }
+
+
 @app.get("/health", tags=["health"])
 async def health_check() -> dict:
     """
