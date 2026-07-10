@@ -18,7 +18,7 @@ from starlette.responses import Response
 
 from config import settings
 from database import check_database_connection, engine
-from routes import assets, auth, market, notifications, portfolio, rebalance, strategy, transactions
+from routes import assets, auth, cron, market, notifications, portfolio, rebalance, strategy, transactions
 from services.scheduler import shutdown_scheduler, start_scheduler
 
 # ─────────────────────────────────────────
@@ -166,3 +166,4 @@ app.include_router(transactions.router)
 app.include_router(rebalance.router)
 app.include_router(market.router)
 app.include_router(notifications.router)
+app.include_router(cron.router)

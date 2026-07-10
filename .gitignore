@@ -1,7 +1,8 @@
-.env
-/__pycache__
-/venv
-/tests
-/.env.example
-/.venv
-/venv
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+scratch/
+yfinance-cache/
