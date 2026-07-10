@@ -12,11 +12,11 @@ router = APIRouter(prefix="/api/market", tags=["market"])
 logger = logging.getLogger(__name__)
 
 FEATURED_ASSETS = [
-    {"symbol": "SPY", "quote_symbol": "SPY.BA", "name": "SPDR S&P 500 ETF Trust", "currency": "ARS"},
-    {"symbol": "NVDA", "quote_symbol": "NVDA.BA", "name": "NVIDIA Corporation", "currency": "ARS"},
-    {"symbol": "MSFT", "quote_symbol": "MSFT.BA", "name": "Microsoft Corporation", "currency": "ARS"},
-    {"symbol": "AMZN", "quote_symbol": "AMZN.BA", "name": "Amazon.com Inc.", "currency": "ARS"},
-    {"symbol": "GOOGL", "quote_symbol": "GOOGL.BA", "name": "Alphabet Inc.", "currency": "ARS"},
+    {"symbol": "SPY", "quote_symbol": "SPY.BA", "name": "SPDR S&P 500 ETF Trust", "currency": "ARS", "ref_price": "25400.00"},
+    {"symbol": "NVDA", "quote_symbol": "NVDA.BA", "name": "NVIDIA Corporation", "currency": "ARS", "ref_price": "18500.00"},
+    {"symbol": "MSFT", "quote_symbol": "MSFT.BA", "name": "Microsoft Corporation", "currency": "ARS", "ref_price": "16200.00"},
+    {"symbol": "AMZN", "quote_symbol": "AMZN.BA", "name": "Amazon.com Inc.", "currency": "ARS", "ref_price": "14500.00"},
+    {"symbol": "GOOGL", "quote_symbol": "GOOGL.BA", "name": "Alphabet Inc.", "currency": "ARS", "ref_price": "13800.00"},
 ]
 FEATURED_REFRESH_INTERVAL = timedelta(minutes=5)
 FEATURED_FETCH_TIMEOUT_SECONDS = 4.0
@@ -33,7 +33,7 @@ def _fallback_featured_assets() -> list[FeaturedAsset]:
             symbol=asset["symbol"],
             quote_symbol=asset["quote_symbol"],
             name=asset["name"],
-            price=ZERO,
+            price=Decimal(asset.get("ref_price", "0")),
             currency=asset["currency"],
             instrument_type="CEDEAR",
         )
@@ -42,12 +42,25 @@ def _fallback_featured_assets() -> list[FeaturedAsset]:
 
 
 def _build_featured_asset(asset_meta: dict, info: dict | None) -> FeaturedAsset:
+    ref_price = Decimal(asset_meta.get("ref_price", "0"))
     if not info:
         return FeaturedAsset(
             symbol=asset_meta["symbol"],
             quote_symbol=asset_meta["quote_symbol"],
             name=asset_meta["name"],
-            price=ZERO,
+            price=ref_price,
+            currency=asset_meta["currency"],
+            instrument_type="CEDEAR",
+        )
+
+    price = info.get("price")
+    if price is None or price <= ZERO:
+        price = ref_price
+        return FeaturedAsset(
+            symbol=asset_meta["symbol"],
+            quote_symbol=asset_meta["quote_symbol"],
+            name=asset_meta["name"],
+            price=ref_price,
             currency=asset_meta["currency"],
             instrument_type="CEDEAR",
         )

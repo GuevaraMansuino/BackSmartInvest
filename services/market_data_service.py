@@ -73,6 +73,10 @@ class MarketDataService:
 
     def _fetch_detailed_from_yahoo(self, variations: list[str]) -> Optional[dict]:
         for ticker_name in variations:
+            direct_info = self._fetch_direct_yahoo_http(ticker_name)
+            if direct_info:
+                return direct_info
+
             try:
                 ticker = yf.Ticker(ticker_name, session=self._session)
                 history = ticker.history(period="5d", interval="1d", auto_adjust=False)
@@ -96,6 +100,36 @@ class MarketDataService:
             stooq_info = self._fetch_detailed_from_stooq(ticker_name)
             if stooq_info:
                 return stooq_info
+        return None
+
+    def _fetch_direct_yahoo_http(self, ticker_name: str) -> Optional[dict]:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+        }
+        urls = [
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker_name}?interval=1d&range=5d",
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{ticker_name}?interval=1d&range=5d",
+        ]
+        for url in urls:
+            try:
+                with httpx.Client(timeout=6.0, headers=headers, follow_redirects=True, trust_env=False) as client:
+                    resp = client.get(url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        result = data.get("chart", {}).get("result")
+                        if result and len(result) > 0:
+                            meta = result[0].get("meta", {})
+                            price = meta.get("regularMarketPrice")
+                            prev_close = meta.get("previousClose")
+                            if price is not None and float(price) > 0:
+                                return {
+                                    "price": Decimal(str(price)),
+                                    "prev_close": Decimal(str(prev_close)) if prev_close else None,
+                                    "ticker_used": ticker_name,
+                                }
+            except Exception as exc:
+                logger.debug("Direct Yahoo HTTP error for %s on %s: %s", ticker_name, url, exc)
         return None
 
     def _fetch_detailed_from_stooq(self, ticker_name: str) -> Optional[dict]:
