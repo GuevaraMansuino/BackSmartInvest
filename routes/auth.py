@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from config import settings
 from database import get_db
 from dependencies.auth_guard import AuthenticatedUser, get_current_user_guard
 from models.entities import Profile
