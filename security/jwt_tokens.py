@@ -17,8 +17,8 @@ from jose import JWTError, jwt
 
 from config import settings
 
-ACCESS_TOKEN_EXPIRE_MINUTES = getattr(settings, "ACCESS_TOKEN_EXPIRE_MINUTES", 15)
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+ACCESS_TOKEN_EXPIRE_MINUTES = getattr(settings, "ACCESS_TOKEN_EXPIRE_MINUTES", 1440)
+REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 
 def _get_secret_key() -> str:
@@ -93,7 +93,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
     Adjunta los tokens duales en Cookies seguras con atributos:
     - HttpOnly=True (Inaccesible desde Javascript del navegador, previene XSS)
     - Secure=False en localhost, True en producción
-    - SameSite='strict' (Previene CSRF)
+    - SameSite='lax' (Permite persistencia en navegación y recarga SPA)
     """
     is_secure = not ("localhost" in settings.BACKEND_CORS_ORIGINS or "127.0.0.1" in settings.BACKEND_CORS_ORIGINS)
 
@@ -103,7 +103,7 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         httponly=True,
         secure=is_secure,
-        samesite="strict",
+        samesite="lax",
         path="/",
     )
     response.set_cookie(
@@ -112,8 +112,8 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         httponly=True,
         secure=is_secure,
-        samesite="strict",
-        path="/api/auth",
+        samesite="lax",
+        path="/",
     )
 
 
@@ -122,4 +122,5 @@ def clear_auth_cookies(response: Response) -> None:
     Limpia las cookies de autenticación al cerrar sesión.
     """
     response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
     response.delete_cookie("refresh_token", path="/api/auth")
