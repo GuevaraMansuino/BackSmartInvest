@@ -27,8 +27,13 @@ INITIAL_ASSETS: list[tuple[str, str]] = [
     ("EEM", "iShares MSCI Emerging Markets ETF"),
     ("GLD", "SPDR Gold Trust ETF"),
     ("TLT", "iShares 20+ Year Treasury Bond ETF"),
+    ("SMH", "VanEck Semiconductor ETF"),
+    ("SOXX", "iShares Semiconductor ETF"),
     # Acciones globales
     ("AAPL", "Apple Inc."),
+    ("AMD", "Advanced Micro Devices Inc."),
+    ("AVGO", "Broadcom Inc."),
+    ("TSM", "Taiwan Semiconductor Manufacturing Co."),
     ("MSFT", "Microsoft Corporation"),
     ("GOOGL", "Alphabet Inc. (Class A)"),
     ("AMZN", "Amazon.com Inc."),
