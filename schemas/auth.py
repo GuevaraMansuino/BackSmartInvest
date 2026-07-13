@@ -58,3 +58,22 @@ class AuthResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class RequestPasswordChangeResponse(BaseModel):
+    message: str
+    dev_code: str | None = None
+
+
+class VerifyPasswordChangeRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    code: str = Field(..., min_length=6, max_length=10, description="Código de verificación recibido")
+    new_password: str = Field(..., min_length=8, max_length=128, description="Nueva contraseña segura")
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password_complexity(cls, v: str) -> str:
+        if not re.search(r"[A-Za-z]", v) or not re.search(r"\d", v):
+            raise ValueError("La contraseña debe incluir al menos una letra y un número.")
+        return v

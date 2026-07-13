@@ -10,7 +10,9 @@ Incluye:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
@@ -25,6 +27,8 @@ from schemas.auth import (
     LoginRequest,
     MessageResponse,
     RegisterRequest,
+    RequestPasswordChangeResponse,
+    VerifyPasswordChangeRequest,
 )
 from security.jwt_tokens import (
     clear_auth_cookies,
@@ -267,3 +271,93 @@ async def get_me(
         email=current_user.email,
         role=current_user.role,
     )
+
+
+def _hash_reset_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+@router.post("/request-password-change", response_model=RequestPasswordChangeResponse)
+async def request_password_change(
+    current_user: AuthenticatedUser = Depends(get_current_user_guard),
+    db: Session = Depends(get_db),
+) -> RequestPasswordChangeResponse:
+    """
+    Genera un código de verificación de 6 dígitos para cambio de contraseña y lo envía al correo.
+    """
+    profile = db.get(Profile, current_user.user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado.",
+        )
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    now = datetime.now(timezone.utc)
+    expire_dt = now + timedelta(minutes=15)
+
+    profile.reset_code_hash = _hash_reset_code(code)
+    profile.reset_code_expires_at = expire_dt
+    db.add(profile)
+    db.commit()
+
+    print(f"\n[SECURITY EMAIL] Correo de verificación para {profile.email}")
+    print(f"[SECURITY EMAIL] Código temporal (válido 15 min): {code}\n")
+
+    return RequestPasswordChangeResponse(
+        message="Código de verificación enviado al correo electrónico.",
+        dev_code=code,
+    )
+
+
+@router.post("/verify-and-change-password", response_model=MessageResponse)
+async def verify_and_change_password(
+    payload: VerifyPasswordChangeRequest,
+    current_user: AuthenticatedUser = Depends(get_current_user_guard),
+    db: Session = Depends(get_db),
+) -> MessageResponse:
+    """
+    Verifica el código de 6 dígitos y actualiza la contraseña del usuario.
+    """
+    profile = db.get(Profile, current_user.user_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado.",
+        )
+
+    if not profile.reset_code_hash or not profile.reset_code_expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No has solicitado un código de verificación o ya fue utilizado.",
+        )
+
+    now = datetime.now(timezone.utc)
+    db_expire = profile.reset_code_expires_at
+    if db_expire.tzinfo is None:
+        db_expire = db_expire.replace(tzinfo=timezone.utc)
+
+    if now > db_expire:
+        profile.reset_code_hash = None
+        profile.reset_code_expires_at = None
+        db.add(profile)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El código de verificación ha expirado. Solicita uno nuevo.",
+        )
+
+    incoming_hash = _hash_reset_code(payload.code.strip())
+    if incoming_hash != profile.reset_code_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código de verificación incorrecto.",
+        )
+
+    profile.password_hash = hash_password(payload.new_password)
+    profile.reset_code_hash = None
+    profile.reset_code_expires_at = None
+    db.add(profile)
+    db.commit()
+
+    return MessageResponse(message="Contraseña actualizada exitosamente.")
