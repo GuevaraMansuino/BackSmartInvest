@@ -323,31 +323,40 @@ async def request_password_change(
     """
     Genera un código de verificación de 6 dígitos para cambio de contraseña y lo envía al correo.
     """
-    profile = db.get(Profile, current_user.user_id)
-    if not profile:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Usuario no encontrado.",
+    try:
+        profile = db.get(Profile, current_user.user_id)
+        if not profile:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado en base de datos.",
+            )
+
+        code = f"{secrets.randbelow(1000000):06d}"
+        now = datetime.now(timezone.utc)
+        expire_dt = now + timedelta(minutes=15)
+
+        profile.reset_code_hash = _hash_reset_code(code)
+        profile.reset_code_expires_at = expire_dt
+        db.add(profile)
+        db.commit()
+
+        print(f"\n[SECURITY EMAIL] Correo de verificación para {profile.email}")
+        print(f"[SECURITY EMAIL] Código temporal (válido 15 min): {code}\n")
+
+        _send_smtp_verification_email(profile.email, code)
+
+        return RequestPasswordChangeResponse(
+            message="Código de verificación enviado al correo electrónico.",
+            dev_code=code,
         )
-
-    code = f"{secrets.randbelow(1000000):06d}"
-    now = datetime.now(timezone.utc)
-    expire_dt = now + timedelta(minutes=15)
-
-    profile.reset_code_hash = _hash_reset_code(code)
-    profile.reset_code_expires_at = expire_dt
-    db.add(profile)
-    db.commit()
-
-    print(f"\n[SECURITY EMAIL] Correo de verificación para {profile.email}")
-    print(f"[SECURITY EMAIL] Código temporal (válido 15 min): {code}\n")
-
-    _send_smtp_verification_email(profile.email, code)
-
-    return RequestPasswordChangeResponse(
-        message="Código de verificación enviado al correo electrónico.",
-        dev_code=code,
-    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error en base de datos al solicitar cambio de contraseña ({type(exc).__name__}): {exc}",
+        )
 
 
 @router.post("/verify-and-change-password", response_model=MessageResponse)

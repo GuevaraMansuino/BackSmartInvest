@@ -35,9 +35,10 @@ logger = logging.getLogger("smart_invest")
 
 def run_auto_migrations():
     try:
-        with engine.begin() as conn:
+        with engine.connect() as conn:
             conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS reset_code_hash VARCHAR(64) NULL;"))
             conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS reset_code_expires_at TIMESTAMPTZ NULL;"))
+            conn.commit()
         logger.info("Auto-migración de columnas en 'profiles' verificada exitosamente.")
     except Exception as exc:
         logger.warning(f"No se pudo ejecutar auto-migración en 'profiles': {exc}")
