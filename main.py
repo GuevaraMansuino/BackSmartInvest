@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
@@ -30,6 +31,16 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 logger = logging.getLogger("smart_invest")
+
+
+def run_auto_migrations():
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS reset_code_hash VARCHAR(64) NULL;"))
+            conn.execute(text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS reset_code_expires_at TIMESTAMPTZ NULL;"))
+        logger.info("Auto-migración de columnas en 'profiles' verificada exitosamente.")
+    except Exception as exc:
+        logger.warning(f"No se pudo ejecutar auto-migración en 'profiles': {exc}")
 
 
 # ─────────────────────────────────────────
@@ -51,6 +62,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 async def lifespan(_: FastAPI):
     logger.info("Starting up Smart Invest API...")
     check_database_connection()
+    run_auto_migrations()
     logger.info("Database connection OK.")
     await market.warm_featured_cache()
     logger.info("Featured assets cache warm.")
