@@ -286,11 +286,6 @@ def _send_smtp_verification_email(to_email: str, code: str) -> None:
     if not settings.SMTP_SERVER or not settings.SMTP_USER:
         return
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = "Código de verificación - Cambio de contraseña SmartInvest"
-        msg["From"] = settings.SMTP_FROM_EMAIL or settings.SMTP_USER
-        msg["To"] = to_email
-
         html_body = f"""
         <html>
           <body style="font-family: Arial, sans-serif; background-color: #000; color: #fff; padding: 20px;">
@@ -305,15 +300,46 @@ def _send_smtp_verification_email(to_email: str, code: str) -> None:
           </body>
         </html>
         """
+
+        # 1. Si es Resend, usar API REST por HTTPS (puerto 443) instantáneo en lugar de SMTP (que Render bloquea en puerto 587)
+        if (
+            "resend" in settings.SMTP_SERVER.lower()
+            or settings.SMTP_USER == "resend"
+            or settings.SMTP_PASSWORD.startswith("re_")
+        ):
+            import requests
+
+            headers = {
+                "Authorization": f"Bearer {settings.SMTP_PASSWORD}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "from": settings.SMTP_FROM_EMAIL or "onboarding@resend.dev",
+                "to": [to_email],
+                "subject": "Código de verificación - Cambio de contraseña SmartInvest",
+                "html": html_body,
+            }
+            res = requests.post("https://api.resend.com/emails", json=payload, headers=headers, timeout=5)
+            if res.status_code in (200, 201):
+                print(f"[RESEND OK] Correo enviado exitosamente vía API REST a {to_email}")
+            else:
+                print(f"[RESEND WARNING {res.status_code}] Error al enviar con Resend API: {res.text}")
+            return
+
+        # 2. Si es otro SMTP tradicional
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Código de verificación - Cambio de contraseña SmartInvest"
+        msg["From"] = settings.SMTP_FROM_EMAIL or settings.SMTP_USER
+        msg["To"] = to_email
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
+        with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT, timeout=8) as server:
             server.starttls()
             server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             server.send_message(msg)
         print(f"[SMTP OK] Correo de verificación enviado exitosamente a {to_email}")
     except Exception as exc:
-        print(f"[SMTP WARNING] No se pudo enviar el correo vía SMTP: {exc}")
+        print(f"[EMAIL WARNING] No se pudo enviar el correo: {exc}")
 
 
 @router.post("/request-password-change", response_model=RequestPasswordChangeResponse)
