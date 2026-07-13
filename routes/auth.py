@@ -326,7 +326,32 @@ def _send_smtp_verification_email(to_email: str, code: str) -> None:
                 print(f"[RESEND WARNING {res.status_code}] Error al enviar con Resend API: {res.text}")
             return
 
-        # 2. Si es otro SMTP tradicional
+        # 2. Si es Brevo API REST por HTTPS (puerto 443) - permite enviar a cualquier correo gratis
+        if (
+            "brevo" in settings.SMTP_SERVER.lower()
+            or settings.SMTP_USER == "brevo"
+            or settings.SMTP_PASSWORD.startswith("xkeysib-")
+        ):
+            import requests
+
+            headers = {
+                "api-key": settings.SMTP_PASSWORD,
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "sender": {"email": settings.SMTP_FROM_EMAIL or "no-reply@smartinvest.com", "name": "SmartInvest"},
+                "to": [{"email": to_email}],
+                "subject": "Código de verificación - Cambio de contraseña SmartInvest",
+                "htmlContent": html_body,
+            }
+            res = requests.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers, timeout=5)
+            if res.status_code in (200, 201, 202):
+                print(f"[BREVO OK] Correo enviado exitosamente vía API REST a {to_email}")
+            else:
+                print(f"[BREVO WARNING {res.status_code}] Error al enviar con Brevo API: {res.text}")
+            return
+
+        # 3. Si es otro SMTP tradicional
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "Código de verificación - Cambio de contraseña SmartInvest"
         msg["From"] = settings.SMTP_FROM_EMAIL or settings.SMTP_USER
