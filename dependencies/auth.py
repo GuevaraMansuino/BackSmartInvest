@@ -38,13 +38,7 @@ def get_optional_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> AuthenticatedUser | None:
     if credentials is None:
-        # Dev bypass when no token is present from frontend
-        return AuthenticatedUser(
-            user_id=UUID("00000000-0000-0000-0000-000000000000"),
-            email="dev@smartinvest.com",
-            role="authenticated",
-            access_token="dev-token",
-        )
+        return None
 
     token = credentials.credentials
 
