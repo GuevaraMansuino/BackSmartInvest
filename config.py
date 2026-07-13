@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
 
+    # SMTP Configuración Opcional para correos reales
+    SMTP_SERVER: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = "no-reply@smartinvest.com"
+
     @property
     def cors_origins(self) -> list[str]:
         return [

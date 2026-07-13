@@ -277,6 +277,44 @@ def _hash_reset_code(code: str) -> str:
     return hashlib.sha256(code.encode("utf-8")).hexdigest()
 
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+def _send_smtp_verification_email(to_email: str, code: str) -> None:
+    if not settings.SMTP_SERVER or not settings.SMTP_USER:
+        return
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "Código de verificación - Cambio de contraseña SmartInvest"
+        msg["From"] = settings.SMTP_FROM_EMAIL or settings.SMTP_USER
+        msg["To"] = to_email
+
+        html_body = f"""
+        <html>
+          <body style="font-family: Arial, sans-serif; background-color: #000; color: #fff; padding: 20px;">
+            <div style="max-width: 500px; margin: 0 auto; background-color: #111; border: 1px solid #333; border-radius: 12px; padding: 24px;">
+              <h2 style="color: #10b981; margin-top: 0;">SmartInvest Seguridad</h2>
+              <p style="color: #ccc;">Has solicitado cambiar tu contraseña de SmartInvest. Utiliza el siguiente código de verificación temporal (válido por 15 minutos):</p>
+              <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #fff; background-color: #222; padding: 16px; border-radius: 8px; text-align: center; margin: 20px 0;">
+                {code}
+              </div>
+              <p style="font-size: 12px; color: #777;">Si no has solicitado este cambio, puedes ignorar este correo.</p>
+            </div>
+          </body>
+        </html>
+        """
+        msg.attach(MIMEText(html_body, "html"))
+
+        with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
+            server.starttls()
+            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+        print(f"[SMTP OK] Correo de verificación enviado exitosamente a {to_email}")
+    except Exception as exc:
+        print(f"[SMTP WARNING] No se pudo enviar el correo vía SMTP: {exc}")
+
+
 @router.post("/request-password-change", response_model=RequestPasswordChangeResponse)
 async def request_password_change(
     current_user: AuthenticatedUser = Depends(get_current_user_guard),
@@ -303,6 +341,8 @@ async def request_password_change(
 
     print(f"\n[SECURITY EMAIL] Correo de verificación para {profile.email}")
     print(f"[SECURITY EMAIL] Código temporal (válido 15 min): {code}\n")
+
+    _send_smtp_verification_email(profile.email, code)
 
     return RequestPasswordChangeResponse(
         message="Código de verificación enviado al correo electrónico.",
