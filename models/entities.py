@@ -14,7 +14,11 @@ from database import Base
 class Profile(Base):
     __tablename__ = "profiles"
 
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4,
+    )
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
