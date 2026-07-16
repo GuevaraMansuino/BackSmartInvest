@@ -92,8 +92,13 @@ class TestListPortfolios:
         names = {p.name for p in result}
         assert names == {"A", "B"}
 
-    def test_returns_empty_list_when_no_portfolios(self, db, user):
+    def test_auto_creates_default_portfolio_when_no_portfolios(self, db, user):
         result = list_portfolios(db, user)
+        assert len(result) == 1
+        assert result[0].name == "Mi Cartera Principal"
+
+    def test_returns_empty_list_when_auto_create_false(self, db, user):
+        result = list_portfolios(db, user, auto_create=False)
         assert result == []
 
 

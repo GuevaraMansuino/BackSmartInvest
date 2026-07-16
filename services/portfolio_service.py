@@ -36,14 +36,21 @@ def ensure_profile_exists(db: Session, current_user: AuthenticatedUser) -> Profi
     return profile
 
 
-def list_portfolios(db: Session, current_user: AuthenticatedUser) -> list[Portfolio]:
+def list_portfolios(
+    db: Session, current_user: AuthenticatedUser, auto_create: bool = True
+) -> list[Portfolio]:
     ensure_profile_exists(db, current_user)
     statement = (
         select(Portfolio)
         .where(Portfolio.user_id == current_user.user_id)
         .order_by(Portfolio.created_at.desc())
     )
-    return list(db.scalars(statement).all())
+    portfolios = list(db.scalars(statement).all())
+    if not portfolios and auto_create:
+        default_payload = PortfolioCreate(name="Mi Cartera Principal", monthly_amount=0)
+        new_portfolio = create_portfolio(db, current_user, default_payload)
+        return [new_portfolio]
+    return portfolios
 
 
 def get_portfolio_or_none(
@@ -67,6 +74,7 @@ def create_portfolio(
     portfolio = Portfolio(
         user_id=current_user.user_id,
         name=payload.name.strip(),
+        monthly_amount=payload.monthly_amount,
     )
     db.add(portfolio)
 
@@ -85,7 +93,10 @@ def update_portfolio(
     portfolio: Portfolio,
     payload: PortfolioUpdate,
 ) -> Portfolio:
-    portfolio.name = payload.name.strip()
+    if payload.name is not None:
+        portfolio.name = payload.name.strip()
+    if payload.monthly_amount is not None:
+        portfolio.monthly_amount = payload.monthly_amount
 
     try:
         db.commit()

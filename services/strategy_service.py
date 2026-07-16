@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from models import Asset, Portfolio, Strategy
+from models import Asset, Portfolio, Strategy, Transaction
 from schemas.strategy import StrategyItemCreate, StrategySetRequest
 
 
@@ -52,21 +54,27 @@ def set_strategy(
 
     _validate_assets_exist(db, [item.asset_id for item in payload.items])
 
-    # Eliminar estrategia existente
+    # Eliminar estrategia existente e impactar en DB antes de insertar nuevos para no violar unique constraint
     existing = (
         db.scalars(select(Strategy).where(Strategy.portfolio_id == portfolio_id))
         .all()
     )
     for row in existing:
         db.delete(row)
+    db.flush()
 
-    # Insertar nueva estrategia
+    # Insertar nueva estrategia (desduplicando por asset_id si vinieran repetidos)
+    seen_assets = set()
     new_items: list[Strategy] = []
     for item in payload.items:
+        if item.asset_id in seen_assets:
+            continue
+        seen_assets.add(item.asset_id)
         strategy = Strategy(
             portfolio_id=portfolio_id,
             asset_id=item.asset_id,
             percentage=item.percentage,
+            target_amount=item.target_amount,
         )
         db.add(strategy)
         new_items.append(strategy)
@@ -110,3 +118,53 @@ def _validate_assets_exist(db: Session, asset_ids: list[UUID]) -> None:
         raise ValueError(
             f"Los siguientes asset_id no existen: {', '.join(missing)}"
         )
+
+
+def deposit_strategy_budget(
+    db: Session,
+    user_id: UUID,
+    portfolio_id: UUID,
+    amount: Decimal | None = None,
+) -> list[Transaction]:
+    """
+    Deposita el presupuesto en la estrategia del portfolio.
+    Si amount no se especifica, usa portfolio.monthly_amount.
+    Divide el monto a depositar entre los activos de la estrategia según sus porcentajes
+    creando transacciones DEPOSIT para cada activo.
+    """
+    portfolio = _get_portfolio_for_user(db, user_id, portfolio_id)
+    if portfolio is None:
+        raise ValueError("Portfolio no encontrado o no pertenece al usuario.")
+
+    strategies = get_strategy(db, user_id, portfolio_id)
+    if not strategies:
+        raise ValueError("El portfolio no tiene una estrategia configurada.")
+
+    deposit_total = amount if amount is not None and amount > 0 else portfolio.monthly_amount
+    if deposit_total is None or deposit_total <= 0:
+        raise ValueError("No hay un monto mensual configurado ni se especificó un monto válido para depositar.")
+
+    now = datetime.now(timezone.utc)
+    created_txns: list[Transaction] = []
+
+    for strat in strategies:
+        asset_deposit = (deposit_total * strat.percentage / Decimal("100")).quantize(Decimal("0.01"))
+        if asset_deposit > 0:
+            txn = Transaction(
+                portfolio_id=portfolio_id,
+                asset_id=strat.asset_id,
+                type="DEPOSIT",
+                amount=asset_deposit,
+                quantity=None,
+                price=None,
+                date=now,
+                notes=f"Depósito Estrategia ({strat.percentage}%)",
+            )
+            db.add(txn)
+            created_txns.append(txn)
+
+    db.commit()
+    for txn in created_txns:
+        db.refresh(txn)
+
+    return created_txns

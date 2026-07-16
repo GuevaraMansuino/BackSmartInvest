@@ -7,12 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class StrategyItemCreate(BaseModel):
     asset_id: UUID
     percentage: Decimal = Field(gt=0, le=100, decimal_places=2)
+    target_amount: Decimal | None = Field(default=None, ge=0)
 
 
 class StrategySetRequest(BaseModel):
     """
     Reemplaza la estrategia completa de un portfolio.
-    La suma de porcentajes puede ser < 100 (construcción gradual).
+    La suma de porcentajes puede ser <= 100 (construcción gradual).
     """
 
     items: list[StrategyItemCreate] = Field(min_length=1)
@@ -36,6 +37,10 @@ class StrategySetRequest(BaseModel):
         return self
 
 
+class StrategyDepositRequest(BaseModel):
+    amount: Decimal | None = Field(default=None, gt=0)
+
+
 class StrategyItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +48,7 @@ class StrategyItemRead(BaseModel):
     portfolio_id: UUID
     asset_id: UUID
     percentage: Decimal
+    target_amount: Decimal | None = None
     asset_symbol: str | None = None
     asset_name: str | None = None
 
@@ -57,6 +63,7 @@ class StrategyItemRead(BaseModel):
             portfolio_id=s.portfolio_id,
             asset_id=s.asset_id,
             percentage=s.percentage,
+            target_amount=s.target_amount,
             asset_symbol=s.asset.symbol if s.asset else None,
             asset_name=s.asset.name if s.asset else None,
         )

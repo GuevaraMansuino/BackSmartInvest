@@ -18,7 +18,7 @@ from schemas.portfolio import PortfolioCreate
 from schemas.strategy import StrategyItemCreate, StrategySetRequest
 from services.asset_service import create_asset
 from services.portfolio_service import create_portfolio
-from services.strategy_service import delete_strategy_item, get_strategy, set_strategy
+from services.strategy_service import delete_strategy_item, deposit_strategy_budget, get_strategy, set_strategy
 
 
 @pytest.fixture(scope="function")
@@ -144,3 +144,38 @@ class TestDeleteStrategyItem:
     def test_raises_for_nonexistent_item(self, db, user, portfolio):
         with pytest.raises(LookupError):
             delete_strategy_item(db, user.user_id, portfolio.id, uuid4())
+
+
+class TestDepositStrategyBudget:
+    def test_deposits_budget_according_to_percentages(self, db, user, portfolio, asset_btc, asset_eth):
+        portfolio.monthly_amount = Decimal("1000.00")
+        db.commit()
+
+        payload = StrategySetRequest(
+            items=[
+                StrategyItemCreate(asset_id=asset_btc.id, percentage=Decimal("60")),
+                StrategyItemCreate(asset_id=asset_eth.id, percentage=Decimal("40")),
+            ]
+        )
+        set_strategy(db, user.user_id, portfolio.id, payload)
+
+        txns = deposit_strategy_budget(db, user.user_id, portfolio.id)
+        assert len(txns) == 2
+
+        btc_txn = next(t for t in txns if t.asset_id == asset_btc.id)
+        eth_txn = next(t for t in txns if t.asset_id == asset_eth.id)
+
+        assert btc_txn.amount == Decimal("600.00")
+        assert eth_txn.amount == Decimal("400.00")
+        assert btc_txn.type == "DEPOSIT"
+        assert eth_txn.type == "DEPOSIT"
+
+    def test_deposits_custom_amount_if_specified(self, db, user, portfolio, asset_btc):
+        payload = StrategySetRequest(
+            items=[StrategyItemCreate(asset_id=asset_btc.id, percentage=Decimal("100"))]
+        )
+        set_strategy(db, user.user_id, portfolio.id, payload)
+
+        txns = deposit_strategy_budget(db, user.user_id, portfolio.id, amount=Decimal("500.00"))
+        assert len(txns) == 1
+        assert txns[0].amount == Decimal("500.00")

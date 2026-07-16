@@ -57,6 +57,7 @@ class Portfolio(Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
+    monthly_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -117,6 +118,7 @@ class Strategy(Base):
         nullable=False,
     )
     percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    target_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

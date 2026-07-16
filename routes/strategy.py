@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from dependencies import AuthenticatedUser, get_current_user
-from schemas.strategy import StrategyItemRead, StrategySetRequest
+from schemas.strategy import StrategyDepositRequest, StrategyItemRead, StrategySetRequest
+from schemas.transaction import TransactionRead
 from services.strategy_service import (
     delete_strategy_item,
+    deposit_strategy_budget,
     get_strategy,
     set_strategy,
 )
@@ -50,6 +52,29 @@ async def set_portfolio_strategy(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail) from exc
 
     return [StrategyItemRead.from_orm_with_asset(item) for item in items]
+
+
+@router.post("/deposit", response_model=list[TransactionRead], status_code=status.HTTP_201_CREATED)
+async def deposit_strategy_endpoint(
+    portfolio_id: UUID,
+    payload: StrategyDepositRequest | None = None,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> list[TransactionRead]:
+    """
+    Deposita el presupuesto de la estrategia dividiéndolo entre las acciones/cedears
+    según su asignación. Devuelve las transacciones DEPOSIT creadas.
+    """
+    amount = payload.amount if payload else None
+    try:
+        txns = deposit_strategy_budget(db, current_user.user_id, portfolio_id, amount)
+    except ValueError as exc:
+        detail = str(exc)
+        if "no encontrado" in detail:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail) from exc
+
+    return [TransactionRead.from_orm_with_asset(t) for t in txns]
 
 
 @router.delete(
