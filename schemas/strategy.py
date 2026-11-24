@@ -41,6 +41,13 @@ class StrategyDepositRequest(BaseModel):
     amount: Decimal | None = Field(default=None, gt=0)
 
 
+class StrategyReserveManageRequest(BaseModel):
+    action: str = Field(description="TO_GLOBAL, TO_ASSET, o CLEAR")
+    amount: Decimal | None = Field(default=None, gt=0, description="Monto a reasignar o liberar")
+    source_asset_id: UUID | None = Field(default=None, description="Activo de origen (None = Fondo General)")
+    target_asset_id: UUID | None = Field(default=None, description="Activo de destino para TO_ASSET")
+
+
 class StrategyItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from models import Asset, Portfolio, Strategy, Transaction
-from schemas.strategy import StrategyItemCreate, StrategySetRequest
+from schemas.strategy import StrategyItemCreate, StrategyReserveManageRequest, StrategySetRequest
 
 
 def _get_portfolio_for_user(
@@ -168,3 +168,183 @@ def deposit_strategy_budget(
         db.refresh(txn)
 
     return created_txns
+
+
+def get_portfolio_reserves(
+    db: Session, portfolio_id: UUID
+) -> tuple[dict[UUID, Decimal], Decimal]:
+    """Calcula las reservas actuales por activo y del fondo general cronológicamente."""
+    txns = (
+        db.scalars(
+            select(Transaction)
+            .where(Transaction.portfolio_id == portfolio_id)
+            .order_by(Transaction.date.asc())
+        )
+        .all()
+    )
+    asset_reserves: dict[UUID, Decimal] = {}
+    global_reserve = Decimal("0")
+
+    for t in txns:
+        amt = Decimal(str(t.amount or 0))
+        aid = t.asset_id
+
+        if t.type == "DEPOSIT":
+            if aid:
+                asset_reserves[aid] = asset_reserves.get(aid, Decimal("0")) + amt
+            else:
+                global_reserve += amt
+        elif t.type == "WITHDRAW":
+            if aid:
+                curr = asset_reserves.get(aid, Decimal("0"))
+                asset_reserves[aid] = max(Decimal("0"), curr - amt)
+            else:
+                global_reserve = max(Decimal("0"), global_reserve - amt)
+        elif t.type == "BUY":
+            if aid:
+                curr = asset_reserves.get(aid, Decimal("0"))
+                from_asset = min(curr, amt)
+                asset_reserves[aid] = curr - from_asset
+                rem = amt - from_asset
+                if rem > Decimal("0") and global_reserve > Decimal("0"):
+                    from_global = min(global_reserve, rem)
+                    global_reserve -= from_global
+
+    return asset_reserves, global_reserve
+
+
+def reallocate_reserves(
+    db: Session,
+    user_id: UUID,
+    portfolio_id: UUID,
+    payload: StrategyReserveManageRequest,
+) -> list[Transaction]:
+    """
+    Gestiona y reasigna reservas de efectivo:
+    - TO_GLOBAL: mueve reserva de un activo al Fondo General
+    - TO_ASSET: mueve reserva desde un activo (o Fondo General) a otro activo
+    - CLEAR: libera o elimina la reserva remanente de un activo o del Fondo General
+    """
+    portfolio = _get_portfolio_for_user(db, user_id, portfolio_id)
+    if portfolio is None:
+        raise ValueError("Portfolio no encontrado o no pertenece al usuario.")
+
+    asset_reserves, global_reserve = get_portfolio_reserves(db, portfolio_id)
+    source_aid = payload.source_asset_id
+
+    if source_aid is not None:
+        source_asset = db.get(Asset, source_aid)
+        if source_asset is None:
+            raise ValueError("El activo de origen no existe.")
+        source_name = source_asset.symbol
+        available_source = asset_reserves.get(source_aid, Decimal("0"))
+    else:
+        source_name = "Fondo General"
+        available_source = global_reserve
+
+    now = datetime.now(timezone.utc)
+    created: list[Transaction] = []
+    action = payload.action.upper()
+
+    if action == "CLEAR":
+        amt_to_clear = (
+            payload.amount
+            if payload.amount is not None and payload.amount > Decimal("0")
+            else available_source
+        )
+        amt_to_clear = amt_to_clear.quantize(Decimal("0.01"))
+        if amt_to_clear <= Decimal("0"):
+            raise ValueError(f"No hay reserva disponible para liberar en {source_name}.")
+        if amt_to_clear > available_source:
+            raise ValueError(
+                f"El monto a liberar (${amt_to_clear}) supera la reserva disponible (${available_source})."
+            )
+
+        txn = Transaction(
+            portfolio_id=portfolio_id,
+            asset_id=source_aid,
+            type="WITHDRAW",
+            amount=amt_to_clear,
+            date=now,
+            notes=f"Reserva liberada / eliminada de {source_name}",
+        )
+        db.add(txn)
+        created.append(txn)
+
+    elif action == "TO_GLOBAL":
+        if source_aid is None:
+            raise ValueError("El origen ya es el Fondo General.")
+        if payload.amount is None or payload.amount <= Decimal("0"):
+            raise ValueError("Debes especificar un monto válido mayor a 0.")
+        amt = payload.amount.quantize(Decimal("0.01"))
+        if amt > available_source:
+            raise ValueError(
+                f"El monto (${amt}) supera la reserva disponible en {source_name} (${available_source})."
+            )
+
+        txn_withdraw = Transaction(
+            portfolio_id=portfolio_id,
+            asset_id=source_aid,
+            type="WITHDRAW",
+            amount=amt,
+            date=now,
+            notes=f"Reasignado a Fondo General desde {source_name}",
+        )
+        txn_deposit = Transaction(
+            portfolio_id=portfolio_id,
+            asset_id=None,
+            type="DEPOSIT",
+            amount=amt,
+            date=now,
+            notes=f"Transferido desde reserva de {source_name}",
+        )
+        db.add(txn_withdraw)
+        db.add(txn_deposit)
+        created.extend([txn_withdraw, txn_deposit])
+
+    elif action == "TO_ASSET":
+        if payload.target_asset_id is None:
+            raise ValueError("Debes especificar el activo de destino.")
+        target_asset = db.get(Asset, payload.target_asset_id)
+        if target_asset is None:
+            raise ValueError("El activo de destino no existe.")
+        if source_aid == payload.target_asset_id:
+            raise ValueError("El activo de origen y destino no pueden ser el mismo.")
+        if payload.amount is None or payload.amount <= Decimal("0"):
+            raise ValueError("Debes especificar un monto válido mayor a 0.")
+        amt = payload.amount.quantize(Decimal("0.01"))
+        if amt > available_source:
+            raise ValueError(
+                f"El monto (${amt}) supera la reserva disponible en {source_name} (${available_source})."
+            )
+
+        txn_withdraw = Transaction(
+            portfolio_id=portfolio_id,
+            asset_id=source_aid,
+            type="WITHDRAW",
+            amount=amt,
+            date=now,
+            notes=f"Reasignado a {target_asset.symbol} desde {source_name}",
+        )
+        txn_deposit = Transaction(
+            portfolio_id=portfolio_id,
+            asset_id=payload.target_asset_id,
+            type="DEPOSIT",
+            amount=amt,
+            date=now,
+            notes=f"Transferido desde {source_name}",
+        )
+        db.add(txn_withdraw)
+        db.add(txn_deposit)
+        created.extend([txn_withdraw, txn_deposit])
+
+    else:
+        raise ValueError(
+            f"Acción no reconocida: '{action}'. Opciones válidas: TO_GLOBAL, TO_ASSET, CLEAR."
+        )
+
+    db.commit()
+    for t in created:
+        db.refresh(t)
+    return created
+

@@ -15,10 +15,17 @@ from dependencies.auth import AuthenticatedUser
 from models import entities  # noqa: F401
 from schemas.asset import AssetCreate
 from schemas.portfolio import PortfolioCreate
-from schemas.strategy import StrategyItemCreate, StrategySetRequest
+from schemas.strategy import StrategyItemCreate, StrategyReserveManageRequest, StrategySetRequest
 from services.asset_service import create_asset
 from services.portfolio_service import create_portfolio
-from services.strategy_service import delete_strategy_item, deposit_strategy_budget, get_strategy, set_strategy
+from services.strategy_service import (
+    delete_strategy_item,
+    deposit_strategy_budget,
+    get_portfolio_reserves,
+    get_strategy,
+    reallocate_reserves,
+    set_strategy,
+)
 
 
 @pytest.fixture(scope="function")
@@ -179,3 +186,76 @@ class TestDepositStrategyBudget:
         txns = deposit_strategy_budget(db, user.user_id, portfolio.id, amount=Decimal("500.00"))
         assert len(txns) == 1
         assert txns[0].amount == Decimal("500.00")
+
+
+class TestReallocateReserves:
+    def test_reallocate_to_global_fund(self, db, user, portfolio, asset_btc):
+        # Primero depositamos presupuesto en BTC
+        payload = StrategySetRequest(
+            items=[StrategyItemCreate(asset_id=asset_btc.id, percentage=Decimal("100"))]
+        )
+        set_strategy(db, user.user_id, portfolio.id, payload)
+        deposit_strategy_budget(db, user.user_id, portfolio.id, amount=Decimal("1000.00"))
+
+        # Reasignamos 400 de BTC al Fondo General
+        manage_payload = StrategyReserveManageRequest(
+            action="TO_GLOBAL",
+            source_asset_id=asset_btc.id,
+            amount=Decimal("400.00"),
+        )
+        txns = reallocate_reserves(db, user.user_id, portfolio.id, manage_payload)
+        assert len(txns) == 2
+        assert txns[0].type == "WITHDRAW"
+        assert txns[0].asset_id == asset_btc.id
+        assert txns[0].amount == Decimal("400.00")
+        assert txns[1].type == "DEPOSIT"
+        assert txns[1].asset_id is None
+        assert txns[1].amount == Decimal("400.00")
+
+        asset_res, global_res = get_portfolio_reserves(db, portfolio.id)
+        assert asset_res[asset_btc.id] == Decimal("600.00")
+        assert global_res == Decimal("400.00")
+
+    def test_reallocate_between_assets(self, db, user, portfolio, asset_btc, asset_eth):
+        payload = StrategySetRequest(
+            items=[StrategyItemCreate(asset_id=asset_btc.id, percentage=Decimal("100"))]
+        )
+        set_strategy(db, user.user_id, portfolio.id, payload)
+        deposit_strategy_budget(db, user.user_id, portfolio.id, amount=Decimal("1000.00"))
+
+        # Reasignamos 300 de BTC a ETH
+        manage_payload = StrategyReserveManageRequest(
+            action="TO_ASSET",
+            source_asset_id=asset_btc.id,
+            target_asset_id=asset_eth.id,
+            amount=Decimal("300.00"),
+        )
+        txns = reallocate_reserves(db, user.user_id, portfolio.id, manage_payload)
+        assert len(txns) == 2
+
+        asset_res, global_res = get_portfolio_reserves(db, portfolio.id)
+        assert asset_res[asset_btc.id] == Decimal("700.00")
+        assert asset_res[asset_eth.id] == Decimal("300.00")
+        assert global_res == Decimal("0.00")
+
+    def test_clear_remaining_reserve(self, db, user, portfolio, asset_btc):
+        payload = StrategySetRequest(
+            items=[StrategyItemCreate(asset_id=asset_btc.id, percentage=Decimal("100"))]
+        )
+        set_strategy(db, user.user_id, portfolio.id, payload)
+        deposit_strategy_budget(db, user.user_id, portfolio.id, amount=Decimal("250.00"))
+
+        # Borramos/liberamos la reserva que queda en BTC
+        manage_payload = StrategyReserveManageRequest(
+            action="CLEAR",
+            source_asset_id=asset_btc.id,
+        )
+        txns = reallocate_reserves(db, user.user_id, portfolio.id, manage_payload)
+        assert len(txns) == 1
+        assert txns[0].type == "WITHDRAW"
+        assert txns[0].asset_id == asset_btc.id
+        assert txns[0].amount == Decimal("250.00")
+
+        asset_res, global_res = get_portfolio_reserves(db, portfolio.id)
+        assert asset_res[asset_btc.id] == Decimal("0.00")
+

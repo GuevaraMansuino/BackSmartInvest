@@ -18,7 +18,7 @@ from database import SessionLocal
 from services.asset_service import upsert_asset
 
 INITIAL_ASSETS: list[tuple[str, str]] = [
-    # ETFs globales
+    # ETFs globales y sectoriales (cedears)
     ("SPY", "SPDR S&P 500 ETF Trust"),
     ("QQQ", "Invesco QQQ Trust (Nasdaq-100 ETF)"),
     ("VTI", "Vanguard Total Stock Market ETF"),
@@ -29,6 +29,17 @@ INITIAL_ASSETS: list[tuple[str, str]] = [
     ("TLT", "iShares 20+ Year Treasury Bond ETF"),
     ("SMH", "VanEck Semiconductor ETF"),
     ("SOXX", "iShares Semiconductor ETF"),
+    ("XLY", "Consumer Discretionary Select Sector SPDR Fund"),
+    ("XLI", "Industrial Select Sector SPDR Fund"),
+    ("XLP", "Consumer Staples Select Sector SPDR Fund"),
+    ("XLV", "Health Care Select Sector SPDR Fund"),
+    ("XLE", "Energy Select Sector SPDR Fund"),
+    ("XLF", "Financial Select Sector SPDR Fund"),
+    ("XLK", "Technology Select Sector SPDR Fund"),
+    ("XLC", "Communication Services Select Sector SPDR Fund"),
+    ("XLU", "Utilities Select Sector SPDR Fund"),
+    ("XLB", "Materials Select Sector SPDR Fund"),
+    ("XLRE", "Real Estate Select Sector SPDR Fund"),
     # Acciones globales
     ("AAPL", "Apple Inc."),
     ("AMD", "Advanced Micro Devices Inc."),
